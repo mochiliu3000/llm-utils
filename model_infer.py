@@ -6,80 +6,74 @@ pip install unsloth
 
 from unsloth import FastLanguageModel
 import torch
-max_seq_length = 4096
-dtype = None
-load_in_4bit = True
 
-math_code_model_dir = "/home/jovyan/liumochi/open-r1/data_out/Distill-Qwen2.5-7B-Math-Code"
-puzzle_science_model_dir = "/home/jovyan/liumochi/open-r1/data_out/Distill-Qwen2.5-7B-Puzzle-Science"
-all_model_dir = "/home/jovyan/liumochi/open-r1/data_out/Qwen2.5-7B-Open-R1-Distill"
-origin_model_dir = "/home/jovyan/liumochi/model/Qwen/Qwen2.5-7B-Instruct"
+def load_model_and_tokenizer_for_inference(model_dir, max_seq_length, dtype, load_in_4bit, set_pad_token=True):
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name = model_dir, 
+        max_seq_length = max_seq_length,
+        dtype = dtype,
+        load_in_4bit = load_in_4bit,
+    )
+    FastLanguageModel.for_inference(model)
+    if set_pad_token:
+        # If see this warning, set the pad_token as eos_token: model does not have a padding token! Will use pad_token = <|vision_pad|>.
+        tokenizer.pad_token = tokenizer.eos_token
+    return model, tokenizer
 
 
+def infer(model, tokenizer, question, max_new_tokens=5000):
+    messages = [
+        {"role": "system", "content": "You are an Assistant good at math, coding, science and puzzling. When user asks a question, you firstly think about the reasoning process in the mind and then provide the user with the answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."},
+        {"role": "user", "content": question}
+    ]
+    # If see this warning, set attention mask: The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+    formatted_input = tokenizer.apply_chat_template(
+        messages, 
+        tokenize=True,
+        add_generation_prompt=True,
+        return_tensors="pt",
+        return_attention_mask=True
+    ).to("cuda")
 
-model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = origin_model_dir, 
-    max_seq_length = max_seq_length,
-    dtype = dtype,
-    load_in_4bit = load_in_4bit,
-)
-# If see this warning, set the pad_token as eos_token: model does not have a padding token! Will use pad_token = <|vision_pad|>.
-tokenizer.pad_token = tokenizer.eos_token
+    outputs = model.generate(
+        formatted_input, 
+        max_new_tokens=max_new_tokens,
+        use_cache=True,
+    )
+    response = tokenizer.batch_decode(outputs)
+    return response[0]
 
-# question = "The potato was sliced and fried by the cook, what was he looking to make? A: potatoes B: root cellar C: french fries D: prince edward island E: main course"
+if __name__ == "__main__":  
+    max_seq_length = 4096
+    dtype = None
+    load_in_4bit = True
 
-# question = "One school library has 24,850 books, and another has 55,300 books. When these books were arranged evenly on shelves, 154 books were left in the first library, and 175 books were left in the second library. How many books were placed on each shelf?"
+    math_code_model_dir = "/home/jovyan/liumochi/open-r1/data_out/Distill-Qwen2.5-7B-Math-Code"
+    puzzle_science_model_dir = "/home/jovyan/liumochi/open-r1/data_out/Distill-Qwen2.5-7B-Puzzle-Science"
+    all_model_dir = "/home/jovyan/liumochi/open-r1/data_out/Qwen2.5-7B-Open-R1-Distill"
+    origin_model_dir = "/home/jovyan/liumochi/model/Qwen/Qwen2.5-7B-Instruct"
 
-question_1 = "What do you receive a new credit card in? A: wallet B: resturant C: wallet D: envelope E: purse"
+    # origin_model, origin_tokenizer = load_model_and_tokenizer_for_inference(origin_model_dir, max_seq_length, dtype, load_in_4bit, set_pad_token=True)
+    # math_code_model, math_code_tokenizer = load_model_and_tokenizer_for_inference(math_code_model_dir, max_seq_length, dtype, load_in_4bit, set_pad_token=True)
+    puzzle_science_model, puzzle_science_tokenizer = load_model_and_tokenizer_for_inference(puzzle_science_model_dir, max_seq_length, dtype, load_in_4bit, set_pad_token=True)
 
-question_2 = "Billy wants to learn how to socialize, but he doesn't know where to start. He calls his best friend and asks for what? A: have friends B: meet new people C: entertainment D: input E: friendship"
+    # question_1 = "What is the thermal conductivity of a 1nm silicon nanowire at 300K, assuming a phonon mean free path of 100 nm? You can assume that silicon atoms are arranged in a perfect crystal lattice, and use the Callaway model for thermal conductivity calculations."
+    question_1 = "One school library has 24,850 books, and another has 55,300 books. When these books were arranged evenly on shelves, 154 books were left in the first library, and 175 books were left in the second library. How many books were placed on each shelf?"
+    question_2 = "what is at the end of nothing the end of thing but not in great? A: bridgehead B: bungee C: out D: ing E: entity"
 
-messages_1 = [
-    {"role": "system", "content": "You are an Assistant good at math, coding, science and puzzling. When user asks a question, you firstly think about the reasoning process in the mind and then provide the user with the answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."},
-    {"role": "user", "content": question_1}
-]
-
-messages_2 = [
-    {"role": "system", "content": "You are an Assistant good at math, coding, science and puzzling. When user asks a question, you firstly think about the reasoning process in the mind and then provide the user with the answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>."},
-    {"role": "user", "content": question_2}
-]
-
-FastLanguageModel.for_inference(model)
-# If see this warning, set attention mask: The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
-formatted_input_1 = tokenizer.apply_chat_template(
-    messages_1, 
-    tokenize=True,
-    add_generation_prompt=True,
-    return_tensors="pt",
-    return_attention_mask=True
-).to("cuda")
-
-outputs = model.generate(
-    formatted_input_1, 
-    max_new_tokens=8000,
-    use_cache=True,
-)
-response = tokenizer.batch_decode(outputs)
-print(response[0])
-print('=' * 100)
-
-formatted_input_2 = tokenizer.apply_chat_template(
-    messages_2, 
-    tokenize=True,
-    add_generation_prompt=True,
-    return_tensors="pt",
-    return_attention_mask=True
-).to("cuda")
-
-outputs = model.generate(
-    formatted_input_2, 
-    max_new_tokens=8000,
-    use_cache=True,
-)
-response = tokenizer.batch_decode(outputs)
-print(response[0])
-print('=' * 100)
-
+    # print('=' * 50, 'Qwen2.5-7B-Instruct', '=' * 50)
+    # print(infer(origin_model, origin_tokenizer, question_1))
+    # print('-' * 100)
+    # print(infer(origin_model, origin_tokenizer, question_2))
+    # print('=' * 50, 'Distill-Qwen2.5-7B-Math-Code', '=' * 50)
+    # print(infer(math_code_model, math_code_tokenizer, question_1))
+    # print('-' * 100)
+    # print(infer(math_code_model, math_code_tokenizer, question_2))
+    print('=' * 50, 'Distill-Qwen2.5-7B-Puzzle-Science', '=' * 50)
+    print(infer(puzzle_science_model, puzzle_science_tokenizer, question_1))
+    print('-' * 100)
+    print(infer(puzzle_science_model, puzzle_science_tokenizer, question_2))
+    print('=' * 100)
 
 
 """ Qwen2.5-7B-Open-R1-Distill
